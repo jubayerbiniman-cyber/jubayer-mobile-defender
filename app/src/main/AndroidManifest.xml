@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
 
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="JUBAYER MOBILE DEFENDER"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
@@ -21,4 +23,5 @@
         </activity>
 
     </application>
+
 </manifest>

@@ -3,6 +3,8 @@ package com.jubayer.defender;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.os.Build;
+import android.Manifest;
 import android.content.Intent;
 import android.content.pm.*;
 import android.graphics.Color;
@@ -10,18 +12,19 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.*;
+
+import androidx.work.*;
 
 import java.io.*;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
 
     LinearLayout main;
-    TextView report;
-    TextView status;
+    TextView report, status;
 
     final int BG = Color.rgb(8, 12, 20);
     final int CARD = Color.rgb(18, 26, 39);
@@ -29,7 +32,9 @@ public class MainActivity extends Activity {
     final int WHITE = Color.WHITE;
     final int MUTED = Color.rgb(160, 175, 195);
 
-    String[] riskyPermissions = {
+    final int[] riskyPermissions = {};
+
+    String[] risky = {
         "android.permission.READ_SMS",
         "android.permission.SEND_SMS",
         "android.permission.RECEIVE_SMS",
@@ -99,12 +104,9 @@ public class MainActivity extends Activity {
         card.addView(description);
 
         LinearLayout.LayoutParams params =
-            new LinearLayout.LayoutParams(
-                -1, -2
-            );
+            new LinearLayout.LayoutParams(-1, -2);
 
         params.setMargins(0, 8, 0, 8);
-
         main.addView(card, params);
 
         card.setOnClickListener(v -> action.run());
@@ -115,11 +117,10 @@ public class MainActivity extends Activity {
         addHeader("JUBAYER", 17, CYAN);
         addHeader("MOBILE DEFENDER", 29, WHITE);
 
-        TextView version = text(
+        main.addView(text(
             "ADVANCED SECURITY CENTER  |  V3",
             12, MUTED
-        );
-        main.addView(version);
+        ));
 
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
@@ -143,19 +144,25 @@ public class MainActivity extends Activity {
 
         addCard(
             "◈ INSTALLED APP SCANNER",
-            "Check installed apps and sensitive permissions.",
+            "Inspect installed apps and sensitive permissions.",
             this::scanApps
         );
 
         addCard(
             "◈ APK FILE SCANNER",
-            "Select an APK to inspect its metadata and permissions.",
+            "Inspect APK metadata, permissions and SHA-256.",
             this::selectAPK
         );
 
         addCard(
+            "◈ BACKGROUND MONITORING",
+            "Schedule periodic app permission checks.",
+            this::enableBackgroundMonitoring
+        );
+
+        addCard(
             "◈ SECURITY INFORMATION",
-            "Understand scan results and protection limits.",
+            "View scanner capabilities and limitations.",
             this::showInformation
         );
 
@@ -168,13 +175,13 @@ public class MainActivity extends Activity {
 
         report.setPadding(16, 18, 16, 18);
         report.setBackground(shape(CARD, 18));
-
         main.addView(report);
 
         TextView footer = text(
             "\nJUBAYER MOBILE DEFENDER\nDefensive Security Edition",
             11, MUTED
         );
+
         footer.setGravity(Gravity.CENTER);
         main.addView(footer);
     }
@@ -186,7 +193,7 @@ public class MainActivity extends Activity {
     void scanApps() {
 
         setStatus("SCANNING INSTALLED APPS");
-        report.setText("Scanning installed applications...\nPlease wait.");
+        report.setText("Scanning installed applications...");
 
         new Thread(() -> {
 
@@ -213,18 +220,12 @@ public class MainActivity extends Activity {
                         for (String permission :
                             app.requestedPermissions) {
 
-                            for (String risky : riskyPermissions) {
+                            for (String riskyPermission : risky) {
 
-                                if (permission.equals(risky)) {
+                                if (permission.equals(riskyPermission)
+                                    && !found.contains(permission)) {
 
-                                    String shortName =
-                                        permission.replace(
-                                            "android.permission.", ""
-                                        );
-
-                                    if (!found.contains(shortName)) {
-                                        found.add(shortName);
-                                    }
+                                    found.add(permission);
                                 }
                             }
                         }
@@ -235,6 +236,7 @@ public class MainActivity extends Activity {
                         flagged++;
 
                         result.append("\n⚠ REVIEW REQUIRED\n");
+
                         result.append("App: ")
                             .append(app.applicationInfo.loadLabel(
                                 getPackageManager()
@@ -245,7 +247,7 @@ public class MainActivity extends Activity {
                             .append(app.packageName)
                             .append("\n");
 
-                        result.append("Permissions: ")
+                        result.append("Sensitive permissions: ")
                             .append(found)
                             .append("\n");
 
@@ -253,7 +255,7 @@ public class MainActivity extends Activity {
                     }
                 }
 
-                String summary =
+                final String summary =
                     "INSTALLED APP SECURITY REPORT\n\n" +
                     "Apps scanned: " + scanned +
                     "\nApps requiring review: " + flagged +
@@ -261,7 +263,7 @@ public class MainActivity extends Activity {
                     (flagged == 0
                         ? "No apps met the review threshold."
                         : result.toString()) +
-                    "\n\nPermission risk is NOT proof of malware.";
+                    "\nPermission risk is NOT proof of malware.";
 
                 runOnUiThread(() -> {
                     report.setText(summary);
@@ -271,9 +273,7 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
 
                 runOnUiThread(() -> {
-                    report.setText(
-                        "Scan error:\n" + e.getMessage()
-                    );
+                    report.setText("Scan error: " + e.getMessage());
                     setStatus("SCAN ERROR");
                 });
             }
@@ -306,7 +306,7 @@ public class MainActivity extends Activity {
             Uri uri = data.getData();
 
             setStatus("ANALYZING APK");
-            report.setText("APK analysis running...\nPlease wait.");
+            report.setText("APK analysis running...");
 
             new Thread(() -> scanAPK(uri)).start();
         }
@@ -351,9 +351,7 @@ public class MainActivity extends Activity {
                 );
 
             if (info == null) {
-                throw new Exception(
-                    "Invalid or unreadable APK file."
-                );
+                throw new Exception("Invalid or unreadable APK.");
             }
 
             String appName = "Unknown";
@@ -372,46 +370,26 @@ public class MainActivity extends Activity {
             }
 
             List<String> permissions = new ArrayList<>();
+            List<String> found = new ArrayList<>();
 
             if (info.requestedPermissions != null) {
 
-                for (String permission :
-                    info.requestedPermissions) {
+                for (String permission : info.requestedPermissions) {
 
-                    permissions.add(
-                        permission.replace(
-                            "android.permission.", ""
-                        )
-                    );
-                }
-            }
+                    permissions.add(permission.replace(
+                        "android.permission.", ""
+                    ));
 
-            List<String> risky = new ArrayList<>();
+                    for (String riskyPermission : risky) {
 
-            for (String permission :
-                info.requestedPermissions == null
-                    ? new String[0]
-                    : info.requestedPermissions) {
-
-                for (String riskyPermission : riskyPermissions) {
-
-                    if (permission.equals(riskyPermission)) {
-
-                        String name = permission.replace(
-                            "android.permission.", ""
-                        );
-
-                        if (!risky.contains(name)) {
-                            risky.add(name);
+                        if (permission.equals(riskyPermission)) {
+                            found.add(permission.replace(
+                                "android.permission.", ""
+                            ));
                         }
                     }
                 }
             }
-
-            String riskLabel =
-                risky.size() >= 3
-                    ? "REVIEW REQUIRED"
-                    : "NO HIGH PERMISSION COUNT FLAG";
 
             String result =
                 "APK SECURITY REPORT\n\n" +
@@ -420,12 +398,10 @@ public class MainActivity extends Activity {
                 "\nVersion: " + info.versionName +
                 "\nVersion code: " + info.versionCode +
                 "\n\nSHA-256:\n" + hash +
-                "\n\nRisk review: " + riskLabel +
-                "\nSensitive permissions: " + risky.size() +
-                "\n\nPermissions:\n" + permissions +
-                "\n\nNOTE:\n" +
-                "This is a metadata and permission inspection. " +
-                "It does not prove whether the APK contains malware.";
+                "\n\nSensitive permissions: " + found.size() +
+                "\n" + found +
+                "\n\nAll permissions:\n" + permissions +
+                "\n\nThis inspection does not prove malware status.";
 
             runOnUiThread(() -> {
                 report.setText(result);
@@ -435,9 +411,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
 
             runOnUiThread(() -> {
-                report.setText(
-                    "APK scan failed:\n" + e.getMessage()
-                );
+                report.setText("APK scan failed:\n" + e.getMessage());
                 setStatus("APK SCAN ERROR");
             });
 
@@ -476,21 +450,60 @@ public class MainActivity extends Activity {
         return hex.toString();
     }
 
+    void enableBackgroundMonitoring() {
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+
+            requestPermissions(
+                new String[]{
+                    Manifest.permission.POST_NOTIFICATIONS
+                },
+                501
+            );
+        }
+
+        PeriodicWorkRequest scanRequest =
+            new PeriodicWorkRequest.Builder(
+                AppScanWorker.class,
+                15,
+                TimeUnit.MINUTES
+            ).build();
+
+        WorkManager.getInstance(this)
+            .enqueueUniquePeriodicWork(
+                "JUBAYER_BACKGROUND_SCAN",
+                ExistingPeriodicWorkPolicy.KEEP,
+                scanRequest
+            );
+
+        setStatus("BACKGROUND MONITORING SCHEDULED");
+
+        report.setText(
+            "BACKGROUND MONITORING\n\n" +
+            "Status: Scheduled\n" +
+            "Minimum interval: 15 minutes\n\n" +
+            "Android controls actual execution timing. " +
+            "This is periodic monitoring, not continuous scanning."
+        );
+    }
+
     void showInformation() {
 
         report.setText(
             "JUBAYER MOBILE DEFENDER V3\n\n" +
-            "CURRENT FEATURES\n" +
+            "AVAILABLE FEATURES\n" +
             "• Installed app permission inspection\n" +
             "• APK metadata inspection\n" +
             "• APK SHA-256 calculation\n" +
-            "• Sensitive permission review\n\n" +
-            "IMPORTANT LIMITATIONS\n" +
+            "• Sensitive permission review\n" +
+            "• Periodic background scan scheduling\n\n" +
+            "LIMITATIONS\n" +
             "• Permission count cannot prove malware.\n" +
-            "• SHA-256 alone cannot identify a threat.\n" +
-            "• No live website filtering is active yet.\n" +
-            "• Background monitoring is not active yet.\n\n" +
-            "More protection modules will be added separately."
+            "• SHA-256 alone cannot identify threats.\n" +
+            "• No VPN website filtering is active yet.\n" +
+            "• Background checks are not real-time."
         );
     }
 }

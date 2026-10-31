@@ -11,6 +11,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.net.VpnService;
 import android.view.Gravity;
 import android.widget.*;
 
@@ -32,9 +33,7 @@ public class MainActivity extends Activity {
     final int WHITE = Color.WHITE;
     final int MUTED = Color.rgb(160, 175, 195);
 
-    final int[] riskyPermissions = {};
-
-    String[] risky = {
+    final String[] risky = {
         "android.permission.READ_SMS",
         "android.permission.SEND_SMS",
         "android.permission.RECEIVE_SMS",
@@ -89,7 +88,6 @@ public class MainActivity extends Activity {
     }
 
     void addCard(String title, String subtitle, Runnable action) {
-
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(16, 14, 16, 14);
@@ -118,7 +116,7 @@ public class MainActivity extends Activity {
         addHeader("MOBILE DEFENDER", 29, WHITE);
 
         main.addView(text(
-            "ADVANCED SECURITY CENTER  |  V3",
+            "ADVANCED SECURITY CENTER | V4",
             12, MUTED
         ));
 
@@ -134,7 +132,7 @@ public class MainActivity extends Activity {
 
         statusCard.addView(status);
         statusCard.addView(text(
-            "Device security dashboard is active.",
+            "Defensive security dashboard is ready.",
             13, WHITE
         ));
 
@@ -161,8 +159,14 @@ public class MainActivity extends Activity {
         );
 
         addCard(
+            "◈ VPN WEBSITE PROTECTION",
+            "Request Android VPN permission. Filtering is not active yet.",
+            this::startWebsiteProtection
+        );
+
+        addCard(
             "◈ SECURITY INFORMATION",
-            "View scanner capabilities and limitations.",
+            "View features and limitations.",
             this::showInformation
         );
 
@@ -196,9 +200,7 @@ public class MainActivity extends Activity {
         report.setText("Scanning installed applications...");
 
         new Thread(() -> {
-
             try {
-
                 List<PackageInfo> apps =
                     getPackageManager().getInstalledPackages(
                         PackageManager.GET_PERMISSIONS
@@ -210,21 +212,15 @@ public class MainActivity extends Activity {
                 int flagged = 0;
 
                 for (PackageInfo app : apps) {
-
                     scanned++;
 
                     List<String> found = new ArrayList<>();
 
                     if (app.requestedPermissions != null) {
-
-                        for (String permission :
-                            app.requestedPermissions) {
-
+                        for (String permission : app.requestedPermissions) {
                             for (String riskyPermission : risky) {
-
                                 if (permission.equals(riskyPermission)
                                     && !found.contains(permission)) {
-
                                     found.add(permission);
                                 }
                             }
@@ -232,24 +228,19 @@ public class MainActivity extends Activity {
                     }
 
                     if (found.size() >= 3) {
-
                         flagged++;
 
-                        result.append("\n⚠ REVIEW REQUIRED\n");
-
+                        result.append("\nREVIEW REQUIRED\n");
                         result.append("App: ")
                             .append(app.applicationInfo.loadLabel(
                                 getPackageManager()
-                            ))
-                            .append("\n");
+                            )).append("\n");
 
                         result.append("Package: ")
-                            .append(app.packageName)
-                            .append("\n");
+                            .append(app.packageName).append("\n");
 
                         result.append("Sensitive permissions: ")
-                            .append(found)
-                            .append("\n");
+                            .append(found).append("\n");
 
                         result.append("----------------------\n");
                     }
@@ -271,23 +262,34 @@ public class MainActivity extends Activity {
                 });
 
             } catch (Exception e) {
-
                 runOnUiThread(() -> {
                     report.setText("Scan error: " + e.getMessage());
                     setStatus("SCAN ERROR");
                 });
             }
-
         }).start();
     }
 
     void selectAPK() {
-
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("application/vnd.android.package-archive");
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-
         startActivityForResult(intent, 101);
+    }
+
+    void startWebsiteProtection() {
+        Intent intent = VpnService.prepare(this);
+
+        if (intent != null) {
+            startActivityForResult(intent, 202);
+        } else {
+            report.setText(
+                "VPN permission was already granted.\n\n" +
+                "DNS filtering engine is not implemented yet. " +
+                "Website protection is NOT active."
+            );
+            setStatus("VPN PERMISSION READY - NOT PROTECTED");
+        }
     }
 
     @Override
@@ -310,6 +312,20 @@ public class MainActivity extends Activity {
 
             new Thread(() -> scanAPK(uri)).start();
         }
+
+        if (requestCode == 202) {
+            if (resultCode == RESULT_OK) {
+                report.setText(
+                    "VPN permission granted.\n\n" +
+                    "DNS filtering engine is not implemented yet.\n" +
+                    "Website protection is NOT active."
+                );
+                setStatus("VPN PERMISSION GRANTED - NOT PROTECTED");
+            } else {
+                report.setText("VPN permission denied.");
+                setStatus("VPN NOT ENABLED");
+            }
+        }
     }
 
     void scanAPK(Uri uri) {
@@ -317,7 +333,6 @@ public class MainActivity extends Activity {
         File apkFile = null;
 
         try {
-
             apkFile = File.createTempFile(
                 "jubayer_scan_", ".apk", getCacheDir()
             );
@@ -329,8 +344,7 @@ public class MainActivity extends Activity {
                 throw new Exception("Cannot read selected file.");
             }
 
-            FileOutputStream output =
-                new FileOutputStream(apkFile);
+            FileOutputStream output = new FileOutputStream(apkFile);
 
             byte[] buffer = new byte[8192];
             int length;
@@ -357,7 +371,6 @@ public class MainActivity extends Activity {
             String appName = "Unknown";
 
             if (info.applicationInfo != null) {
-
                 info.applicationInfo.sourceDir =
                     apkFile.getAbsolutePath();
 
@@ -373,15 +386,12 @@ public class MainActivity extends Activity {
             List<String> found = new ArrayList<>();
 
             if (info.requestedPermissions != null) {
-
                 for (String permission : info.requestedPermissions) {
-
                     permissions.add(permission.replace(
                         "android.permission.", ""
                     ));
 
                     for (String riskyPermission : risky) {
-
                         if (permission.equals(riskyPermission)) {
                             found.add(permission.replace(
                                 "android.permission.", ""
@@ -409,14 +419,11 @@ public class MainActivity extends Activity {
             });
 
         } catch (Exception e) {
-
             runOnUiThread(() -> {
                 report.setText("APK scan failed:\n" + e.getMessage());
                 setStatus("APK SCAN ERROR");
             });
-
         } finally {
-
             if (apkFile != null) {
                 apkFile.delete();
             }
@@ -440,7 +447,6 @@ public class MainActivity extends Activity {
         input.close();
 
         byte[] hash = digest.digest();
-
         StringBuilder hex = new StringBuilder();
 
         for (byte b : hash) {
@@ -492,17 +498,19 @@ public class MainActivity extends Activity {
     void showInformation() {
 
         report.setText(
-            "JUBAYER MOBILE DEFENDER V3\n\n" +
+            "JUBAYER MOBILE DEFENDER V4\n\n" +
             "AVAILABLE FEATURES\n" +
             "• Installed app permission inspection\n" +
             "• APK metadata inspection\n" +
             "• APK SHA-256 calculation\n" +
             "• Sensitive permission review\n" +
-            "• Periodic background scan scheduling\n\n" +
+            "• Periodic background scan scheduling\n" +
+            "• Android VPN permission request\n\n" +
             "LIMITATIONS\n" +
             "• Permission count cannot prove malware.\n" +
             "• SHA-256 alone cannot identify threats.\n" +
-            "• No VPN website filtering is active yet.\n" +
+            "• VPN DNS filtering is not implemented.\n" +
+            "• Website protection is not active.\n" +
             "• Background checks are not real-time."
         );
     }
